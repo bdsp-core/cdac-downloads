@@ -41,7 +41,8 @@ from pathlib import Path
 
 import yaml  # PyYAML
 
-REPO_RAW = "https://raw.githubusercontent.com/bdsp-core/bdsp-core.github.io/gh-pages"
+REPO_RAW_BASE = "https://raw.githubusercontent.com/bdsp-core/bdsp-core.github.io"
+REPO_REF = "gh-pages"  # resolved to a SHA at runtime to bypass CDN cache
 YAML_FILES = [
     "_data/publist.yml",
     "_data/yamlHRV_ECG.yml",
@@ -111,8 +112,28 @@ def suggested_filename(p):
     )
 
 
+_resolved_sha = None
+
+
+def _ref_sha():
+    """Resolve REPO_REF to its current commit SHA via the GitHub API.
+    Pinning fetches to a SHA bypasses raw.githubusercontent.com's branch-
+    level CDN cache (which can be minutes stale on hot branches)."""
+    global _resolved_sha
+    if _resolved_sha:
+        return _resolved_sha
+    api = f"https://api.github.com/repos/bdsp-core/bdsp-core.github.io/branches/{REPO_REF}"
+    try:
+        with urllib.request.urlopen(api, timeout=30) as r:
+            import json
+            _resolved_sha = json.loads(r.read())["commit"]["sha"]
+    except Exception:
+        _resolved_sha = REPO_REF  # fall back to branch name
+    return _resolved_sha
+
+
 def fetch_yaml(rel_path):
-    url = f"{REPO_RAW}/{rel_path}"
+    url = f"{REPO_RAW_BASE}/{_ref_sha()}/{rel_path}"
     req = urllib.request.Request(url, headers={"User-Agent": "cdac-downloads/missing-report"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return yaml.safe_load(r.read().decode("utf-8")) or []
